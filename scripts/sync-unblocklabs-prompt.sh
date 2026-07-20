@@ -8,6 +8,18 @@ repo_dir="${state_dir}/source"
 target_file="${state_dir}/AGENTS.md"
 sha_file="${state_dir}/DEPLOYED_SHA"
 lock_dir="${state_dir}/sync.lock"
+clone_dir=""
+candidate_file=""
+
+cleanup() {
+  if [[ -n "${candidate_file}" && "${candidate_file}" == "${state_dir}/AGENTS.md."* ]]; then
+    rm -f -- "${candidate_file}" 2>/dev/null || true
+  fi
+  if [[ -n "${clone_dir}" && "${clone_dir}" == "${state_dir}/source."* && -d "${clone_dir}" ]]; then
+    rm -R -- "${clone_dir}" 2>/dev/null || true
+  fi
+  rmdir "${lock_dir}" 2>/dev/null || true
+}
 
 if [[ ! -d "${workspace_dir}" ]]; then
   print -u2 -- "workspace does not exist: ${workspace_dir}"
@@ -18,11 +30,14 @@ mkdir -p "${state_dir}"
 if ! mkdir "${lock_dir}" 2>/dev/null; then
   exit 0
 fi
-trap 'rmdir "${lock_dir}" 2>/dev/null || true' EXIT
+trap cleanup EXIT
 
 if [[ ! -d "${repo_dir}/.git" ]]; then
+  if [[ -e "${repo_dir}" ]]; then
+    print -u2 -- "source path exists but is not a git repository: ${repo_dir}"
+    exit 6
+  fi
   clone_dir="$(mktemp -d "${state_dir}/source.XXXXXX")"
-  trap 'rm -rf "${clone_dir:-}" 2>/dev/null || true; rmdir "${lock_dir}" 2>/dev/null || true' EXIT
   git clone --quiet --filter=blob:none --no-checkout "${repo_url}" "${clone_dir}"
   mv "${clone_dir}" "${repo_dir}"
   clone_dir=""
@@ -36,7 +51,6 @@ if [[ -f "${sha_file}" ]] && [[ "$(<"${sha_file}")" == "${remote_sha}" ]] && [[ 
 fi
 
 candidate_file="$(mktemp "${state_dir}/AGENTS.md.XXXXXX")"
-trap 'rm -f "${candidate_file:-}" 2>/dev/null || true; rmdir "${lock_dir}" 2>/dev/null || true' EXIT
 git -C "${repo_dir}" show "${remote_sha}:UNBLOCKLABS.md" > "${candidate_file}"
 
 if [[ ! -s "${candidate_file}" ]]; then
